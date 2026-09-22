@@ -3,4 +3,4 @@ dist/
 .env
 .env.local
 *.log
-NOTES.local.md
+*.local.md
