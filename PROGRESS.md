@@ -13,9 +13,9 @@ Daily log of what got built. Updated as I go.
 - [x] Loading / error / empty states
 
 ## Day 3
-- [ ] React Hook Form + Zod validation
-- [ ] TanStack Query wired up
-- [ ] Optimistic create with rollback on failure
+- [x] React Hook Form + Zod validation
+- [x] TanStack Query wired up
+- [x] Optimistic create with rollback on failure
 
 ## Day 4
 - [ ] Node.js API skeleton

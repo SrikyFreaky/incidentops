@@ -1,10 +1,13 @@
 import { IncidentForm } from './components/IncidentForm'
 import { IncidentList } from './components/IncidentList'
-import { useIncidents } from './useIncidents'
+import { useChangeIncidentStatus, useCreateIncident, useIncidentsList, useRemoveIncident } from './hooks/useIncidentsQuery'
 import './App.css'
 
 function App() {
-  const { incidents, loadStatus, addIncident, changeStatus, removeIncident } = useIncidents()
+  const { data: incidents, status } = useIncidentsList()
+  const createIncident = useCreateIncident()
+  const changeStatus = useChangeIncidentStatus()
+  const removeIncident = useRemoveIncident()
 
   return (
     <main>
@@ -12,15 +15,23 @@ function App() {
 
       <section>
         <h2>Report an incident</h2>
-        <IncidentForm onSubmit={addIncident} />
+        <IncidentForm
+          onSubmit={(values) => createIncident.mutate(values)}
+          isSubmitting={createIncident.isPending}
+          submitError={createIncident.isError ? createIncident.error.message : null}
+        />
       </section>
 
       <section>
         <h2>Incidents</h2>
-        {loadStatus === 'loading' && <p role="status">Loading incidents…</p>}
-        {loadStatus === 'error' && <p role="alert">Couldn't load incidents. Try refreshing.</p>}
-        {loadStatus === 'ready' && (
-          <IncidentList incidents={incidents} onStatusChange={changeStatus} onRemove={removeIncident} />
+        {status === 'pending' && <p role="status">Loading incidents…</p>}
+        {status === 'error' && <p role="alert">Couldn't load incidents. Try refreshing.</p>}
+        {status === 'success' && (
+          <IncidentList
+            incidents={incidents}
+            onStatusChange={(id, nextStatus) => changeStatus.mutate({ id, status: nextStatus })}
+            onRemove={(id) => removeIncident.mutate(id)}
+          />
         )}
       </section>
     </main>

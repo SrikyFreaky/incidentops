@@ -1,5 +1,5 @@
 import type { Incident, IncidentStatus } from '../types'
-import { isTransitionAllowed } from '../incidentsReducer'
+import { isTransitionAllowed } from '../incidentRules'
 
 const NEXT_STATUSES: IncidentStatus[] = ['open', 'investigating', 'resolved']
 
