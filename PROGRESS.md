@@ -18,9 +18,9 @@ Daily log of what got built. Updated as I go.
 - [x] Optimistic create with rollback on failure
 
 ## Day 4
-- [ ] Node.js API skeleton
-- [ ] Request validation + consistent error responses
-- [ ] Pagination on list endpoint
+- [x] Node.js API skeleton
+- [x] Request validation + consistent error responses
+- [x] Pagination on list endpoint
 
 ## Day 5
 - [ ] PostgreSQL schema (users, teams, incidents, events)
