@@ -24,6 +24,16 @@ describe('POST /api/v1/incidents', () => {
     expect(res.body.id).toBeTypeOf('string')
   })
 
+  it('rejects a malformed JSON body with 400, not 500', async () => {
+    const res = await request(app)
+      .post('/api/v1/incidents')
+      .set('Content-Type', 'application/json')
+      .send('{"title": "missing closing brace"')
+
+    expect(res.status).toBe(400)
+    expect(res.body.error.code).toBe('BAD_REQUEST')
+  })
+
   it('rejects an invalid title with 400', async () => {
     const res = await request(app)
       .post('/api/v1/incidents')
