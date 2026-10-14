@@ -1,12 +1,17 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import request from 'supertest'
 import { createApp } from '../app'
-import { __resetStoreForTests } from '../services/incidentsService'
+import { prisma } from '../db'
 
 const app = createApp()
 
-beforeEach(() => {
-  __resetStoreForTests()
+beforeEach(async () => {
+  // Cascade delete on incident_events means clearing incidents is enough.
+  await prisma.incident.deleteMany()
+})
+
+afterAll(async () => {
+  await prisma.$disconnect()
 })
 
 describe('POST /api/v1/incidents', () => {

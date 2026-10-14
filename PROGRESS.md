@@ -23,9 +23,9 @@ Daily log of what got built. Updated as I go.
 - [x] Pagination on list endpoint
 
 ## Day 5
-- [ ] PostgreSQL schema (users, teams, incidents, events)
-- [ ] Foreign keys + constraints
-- [ ] First transaction
+- [x] PostgreSQL schema (users, teams, incidents, events)
+- [x] Foreign keys + constraints
+- [x] First transaction
 
 ## Day 6
 - [ ] Session auth
