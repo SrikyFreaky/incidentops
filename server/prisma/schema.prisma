@@ -1,0 +1,115 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider          = "postgresql"
+  url               = env("DATABASE_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+}
+
+enum Severity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum IncidentStatus {
+  OPEN
+  INVESTIGATING
+  RESOLVED
+}
+
+enum MembershipRole {
+  ADMIN
+  MEMBER
+}
+
+enum IncidentEventType {
+  CREATED
+  STATUS_CHANGED
+  COMMENT
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  displayName  String
+  createdAt    DateTime @default(now())
+
+  memberships      TeamMembership[]
+  createdIncidents Incident[]       @relation("IncidentCreatedBy")
+  events           IncidentEvent[]  @relation("EventActor")
+
+  @@map("users")
+}
+
+model Team {
+  id        String   @id @default(uuid())
+  name      String
+  createdAt DateTime @default(now())
+
+  memberships TeamMembership[]
+  incidents   Incident[]
+
+  @@map("teams")
+}
+
+// Join table for the users <-> teams many-to-many relationship. Not wired
+// into any API endpoint yet — Day 6 (auth) is what will actually use this
+// to enforce "who can see/act on this team's incidents."
+model TeamMembership {
+  id        String         @id @default(uuid())
+  teamId    String
+  userId    String
+  role      MembershipRole @default(MEMBER)
+  createdAt DateTime       @default(now())
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@map("team_memberships")
+}
+
+model Incident {
+  id          String         @id @default(uuid())
+  // Monotonically increasing, never exposed in API responses — exists
+  // purely so cursor pagination has a stable sort key that can't collide,
+  // the same problem the in-memory `seq` counter solved before Postgres.
+  seq         BigInt         @unique @default(autoincrement())
+  title       String
+  description String         @default("")
+  severity    Severity
+  status      IncidentStatus @default(OPEN)
+  createdAt   DateTime       @default(now())
+  resolvedAt  DateTime?
+
+  // Nullable for now: there's no real auth/team selection yet (arrives
+  // Day 6). A provided value is still validated by the foreign key —
+  // pointing at a team/user that doesn't exist is rejected either way.
+  teamId      String?
+  createdById String?
+
+  team      Team?           @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  createdBy User?           @relation("IncidentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  events    IncidentEvent[]
+
+  @@map("incidents")
+}
+
+model IncidentEvent {
+  id         String            @id @default(uuid())
+  incidentId String
+  type       IncidentEventType
+  message    String            @default("")
+  actorId    String?
+  createdAt  DateTime          @default(now())
+
+  incident Incident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  actor    User?    @relation("EventActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@map("incident_events")
+}
