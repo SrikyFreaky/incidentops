@@ -32,6 +32,6 @@ Daily log of what got built. Updated as I go.
 - [x] Team membership + role checks enforced server-side
 
 ## Day 7
-- [ ] End-to-end: sign in, create incident, see it persisted
-- [ ] Seed data + smoke test
+- [x] End-to-end: sign in, create incident, see it persisted
+- [x] Seed data + smoke test
 - [ ] First deploy

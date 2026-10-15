@@ -8,7 +8,11 @@
     "build": "tsc",
     "start": "node --env-file=.env dist/index.js",
     "test": "vitest run",
+    "seed": "tsx --env-file=.env prisma/seed.ts",
     "postinstall": "prisma generate"
+  },
+  "prisma": {
+    "seed": "tsx --env-file=.env prisma/seed.ts"
   },
   "keywords": [],
   "author": "",
