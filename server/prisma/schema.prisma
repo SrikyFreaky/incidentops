@@ -57,9 +57,9 @@ model Team {
   @@map("teams")
 }
 
-// Join table for the users <-> teams many-to-many relationship. Not wired
-// into any API endpoint yet — Day 6 (auth) is what will actually use this
-// to enforce "who can see/act on this team's incidents."
+// Join table for the users <-> teams many-to-many relationship. Enforced
+// server-side as of Day 6: every incident route checks for a matching row
+// here before allowing access to that team's incidents.
 model TeamMembership {
   id        String         @id @default(uuid())
   teamId    String
@@ -87,14 +87,13 @@ model Incident {
   createdAt   DateTime       @default(now())
   resolvedAt  DateTime?
 
-  // Nullable for now: there's no real auth/team selection yet (arrives
-  // Day 6). A provided value is still validated by the foreign key —
-  // pointing at a team/user that doesn't exist is rejected either way.
-  teamId      String?
-  createdById String?
+  // Required as of Day 6: real auth/team membership exists now, so every
+  // incident has a genuine team and creator to attribute it to.
+  teamId      String
+  createdById String
 
-  team      Team?           @relation(fields: [teamId], references: [id], onDelete: SetNull)
-  createdBy User?           @relation("IncidentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  team      Team            @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  createdBy User            @relation("IncidentCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
   events    IncidentEvent[]
 
   @@map("incidents")
