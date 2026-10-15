@@ -1,40 +1,58 @@
-import { IncidentForm } from './components/IncidentForm'
-import { IncidentList } from './components/IncidentList'
-import { useChangeIncidentStatus, useCreateIncident, useIncidentsList, useRemoveIncident } from './hooks/useIncidentsQuery'
+import { useState } from 'react'
+import { AuthForm } from './components/AuthForm'
+import { IncidentsWorkspace } from './components/IncidentsWorkspace'
+import { TeamPicker } from './components/TeamPicker'
+import { useCurrentUser, useLogout } from './hooks/useAuth'
 import './App.css'
 
+const SELECTED_TEAM_STORAGE_KEY = 'incidentops.selectedTeamId'
+
 function App() {
-  const { data: incidents, status } = useIncidentsList()
-  const createIncident = useCreateIncident()
-  const changeStatus = useChangeIncidentStatus()
-  const removeIncident = useRemoveIncident()
+  const { data: currentUser, status } = useCurrentUser()
+  const logout = useLogout()
+  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(() =>
+    localStorage.getItem(SELECTED_TEAM_STORAGE_KEY),
+  )
+
+  function selectTeam(teamId: string) {
+    localStorage.setItem(SELECTED_TEAM_STORAGE_KEY, teamId)
+    setSelectedTeamId(teamId)
+  }
+
+  function switchTeam() {
+    localStorage.removeItem(SELECTED_TEAM_STORAGE_KEY)
+    setSelectedTeamId(null)
+  }
+
+  if (status === 'pending') {
+    return <p role="status">Loading…</p>
+  }
+
+  if (!currentUser) {
+    return (
+      <main>
+        <AuthForm />
+      </main>
+    )
+  }
 
   return (
-    <main>
-      <h1>IncidentOps</h1>
+    <div>
+      <header>
+        <span>Signed in as {currentUser.displayName}</span>
+        <button type="button" onClick={() => logout.mutate()}>
+          Log out
+        </button>
+      </header>
 
-      <section>
-        <h2>Report an incident</h2>
-        <IncidentForm
-          onSubmit={(values) => createIncident.mutate(values)}
-          isSubmitting={createIncident.isPending}
-          submitError={createIncident.isError ? createIncident.error.message : null}
-        />
-      </section>
-
-      <section>
-        <h2>Incidents</h2>
-        {status === 'pending' && <p role="status">Loading incidents…</p>}
-        {status === 'error' && <p role="alert">Couldn't load incidents. Try refreshing.</p>}
-        {status === 'success' && (
-          <IncidentList
-            incidents={incidents}
-            onStatusChange={(id, nextStatus) => changeStatus.mutate({ id, status: nextStatus })}
-            onRemove={(id) => removeIncident.mutate(id)}
-          />
-        )}
-      </section>
-    </main>
+      {selectedTeamId ? (
+        <IncidentsWorkspace teamId={selectedTeamId} onSwitchTeam={switchTeam} />
+      ) : (
+        <main>
+          <TeamPicker onSelect={selectTeam} />
+        </main>
+      )}
+    </div>
   )
 }
 
