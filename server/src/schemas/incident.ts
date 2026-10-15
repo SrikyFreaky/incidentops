@@ -19,5 +19,10 @@ export const listIncidentsQuerySchema = z.object({
 })
 
 export const incidentIdParamsSchema = z.object({
+  teamId: z.string().uuid('Invalid team id.'),
   id: z.string().uuid('Invalid incident id.'),
+})
+
+export const teamIncidentsParamsSchema = z.object({
+  teamId: z.string().uuid('Invalid team id.'),
 })

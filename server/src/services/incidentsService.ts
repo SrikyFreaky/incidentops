@@ -57,12 +57,15 @@ function decodeCursor(cursor: string): bigint {
   }
 }
 
-export async function listIncidents({ limit, cursor }: ListIncidentsParams): Promise<ListIncidentsResult> {
+export async function listIncidents(
+  teamId: string,
+  { limit, cursor }: ListIncidentsParams,
+): Promise<ListIncidentsResult> {
   const pageSize = Math.min(limit ?? DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE)
   const afterSeq = cursor ? decodeCursor(cursor) : null
 
   const rows = await prisma.incident.findMany({
-    where: afterSeq !== null ? { seq: { lt: afterSeq } } : undefined,
+    where: { teamId, ...(afterSeq !== null ? { seq: { lt: afterSeq } } : {}) },
     orderBy: { seq: 'desc' },
     take: pageSize + 1,
   })
@@ -77,7 +80,11 @@ export async function listIncidents({ limit, cursor }: ListIncidentsParams): Pro
   }
 }
 
-export async function createIncident(input: NewIncidentInput): Promise<Incident> {
+export async function createIncident(
+  teamId: string,
+  createdById: string,
+  input: NewIncidentInput,
+): Promise<Incident> {
   // First real transaction: the incident row and its initial "created"
   // timeline event either both land or neither does. Without this, a
   // crash between the two inserts would leave an incident with no audit
@@ -85,6 +92,8 @@ export async function createIncident(input: NewIncidentInput): Promise<Incident>
   const incident = await prisma.$transaction(async (tx) => {
     const created = await tx.incident.create({
       data: {
+        teamId,
+        createdById,
         title: input.title,
         description: input.description,
         severity: toDbSeverity(input.severity),
@@ -96,6 +105,7 @@ export async function createIncident(input: NewIncidentInput): Promise<Incident>
         incidentId: created.id,
         type: 'CREATED',
         message: `Incident reported: ${created.title}`,
+        actorId: createdById,
       },
     })
 
@@ -105,14 +115,23 @@ export async function createIncident(input: NewIncidentInput): Promise<Incident>
   return toIncident(incident)
 }
 
-export async function getIncidentOrThrow(id: string): Promise<Incident> {
-  const incident = await prisma.incident.findUnique({ where: { id } })
+// Every lookup is scoped by teamId, not just id — this is what stops a
+// signed-in member of Team A from reading or modifying Team B's incident
+// by guessing/reusing a UUID. Membership in *some* team is not the same
+// as membership in *this* incident's team.
+export async function getIncidentOrThrow(teamId: string, id: string): Promise<Incident> {
+  const incident = await prisma.incident.findFirst({ where: { id, teamId } })
   if (!incident) throw ApiError.notFound(`No incident with id ${id}.`)
   return toIncident(incident)
 }
 
-export async function changeIncidentStatus(id: string, status: IncidentStatus): Promise<Incident> {
-  const existing = await prisma.incident.findUnique({ where: { id } })
+export async function changeIncidentStatus(
+  teamId: string,
+  id: string,
+  status: IncidentStatus,
+  actorId: string,
+): Promise<Incident> {
+  const existing = await prisma.incident.findFirst({ where: { id, teamId } })
   if (!existing) throw ApiError.notFound(`No incident with id ${id}.`)
 
   const currentStatus = toApiStatus(existing.status)
@@ -134,6 +153,7 @@ export async function changeIncidentStatus(id: string, status: IncidentStatus): 
         incidentId: id,
         type: 'STATUS_CHANGED',
         message: `Status changed from ${currentStatus} to ${status}`,
+        actorId,
       },
     })
 
@@ -143,11 +163,7 @@ export async function changeIncidentStatus(id: string, status: IncidentStatus): 
   return toIncident(updated)
 }
 
-export async function removeIncident(id: string): Promise<void> {
-  try {
-    // incident_events rows cascade-delete via the schema's onDelete: Cascade
-    await prisma.incident.delete({ where: { id } })
-  } catch {
-    throw ApiError.notFound(`No incident with id ${id}.`)
-  }
+export async function removeIncident(teamId: string, id: string): Promise<void> {
+  const result = await prisma.incident.deleteMany({ where: { id, teamId } })
+  if (result.count === 0) throw ApiError.notFound(`No incident with id ${id}.`)
 }
