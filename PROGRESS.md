@@ -28,8 +28,8 @@ Daily log of what got built. Updated as I go.
 - [x] First transaction
 
 ## Day 6
-- [ ] Session auth
-- [ ] Team membership + role checks enforced server-side
+- [x] Session auth
+- [x] Team membership + role checks enforced server-side
 
 ## Day 7
 - [ ] End-to-end: sign in, create incident, see it persisted

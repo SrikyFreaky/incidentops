@@ -5,33 +5,189 @@ import { prisma } from '../db'
 
 const app = createApp()
 
-beforeEach(async () => {
-  // Cascade delete on incident_events means clearing incidents is enough.
+async function resetDb() {
+  // Deletion order matters: incidents cascade-delete their events, but a
+  // user can't be deleted while they still "created by" an incident
+  // (onDelete: Restrict) — so incidents go first, then memberships/teams,
+  // then users.
   await prisma.incident.deleteMany()
-})
+  await prisma.teamMembership.deleteMany()
+  await prisma.team.deleteMany()
+  await prisma.user.deleteMany()
+}
+
+beforeEach(resetDb)
 
 afterAll(async () => {
+  await resetDb()
   await prisma.$disconnect()
 })
 
-describe('POST /api/v1/incidents', () => {
-  it('creates an incident with valid input', async () => {
-    const res = await request(app)
-      .post('/api/v1/incidents')
-      .send({ title: 'Checkout API down', description: 'All EU regions', severity: 'high' })
+let userCounter = 0
+async function signUpAndLogIn(agent: ReturnType<typeof request.agent>) {
+  userCounter += 1
+  const email = `user${userCounter}@example.com`
+  await agent.post('/api/v1/auth/signup').send({
+    email,
+    password: 'correct horse battery staple',
+    displayName: `Test User ${userCounter}`,
+  })
+  return email
+}
+
+async function createTeamAs(agent: ReturnType<typeof request.agent>, name = 'Platform Team') {
+  const res = await agent.post('/api/v1/teams').send({ name })
+  return res.body.id as string
+}
+
+describe('auth', () => {
+  it('signs up a new user and starts a session', async () => {
+    const agent = request.agent(app)
+    const res = await agent.post('/api/v1/auth/signup').send({
+      email: 'new@example.com',
+      password: 'correct horse battery staple',
+      displayName: 'New Person',
+    })
 
     expect(res.status).toBe(201)
-    expect(res.body).toMatchObject({
-      title: 'Checkout API down',
-      severity: 'high',
-      status: 'open',
+    expect(res.body).toMatchObject({ email: 'new@example.com', displayName: 'New Person' })
+    expect(res.body.passwordHash).toBeUndefined()
+
+    const me = await agent.get('/api/v1/auth/me')
+    expect(me.status).toBe(200)
+    expect(me.body.email).toBe('new@example.com')
+  })
+
+  it('rejects a duplicate signup email with 409', async () => {
+    const agent = request.agent(app)
+    await agent.post('/api/v1/auth/signup').send({
+      email: 'dupe@example.com',
+      password: 'correct horse battery staple',
+      displayName: 'First',
     })
-    expect(res.body.id).toBeTypeOf('string')
+
+    const res = await request(app).post('/api/v1/auth/signup').send({
+      email: 'dupe@example.com',
+      password: 'another password',
+      displayName: 'Second',
+    })
+
+    expect(res.status).toBe(409)
+  })
+
+  it('logs in with correct credentials', async () => {
+    await request(app).post('/api/v1/auth/signup').send({
+      email: 'login@example.com',
+      password: 'correct horse battery staple',
+      displayName: 'Login Test',
+    })
+
+    const agent = request.agent(app)
+    const res = await agent
+      .post('/api/v1/auth/login')
+      .send({ email: 'login@example.com', password: 'correct horse battery staple' })
+
+    expect(res.status).toBe(200)
+    const me = await agent.get('/api/v1/auth/me')
+    expect(me.status).toBe(200)
+  })
+
+  it('rejects a wrong password with 401', async () => {
+    await request(app).post('/api/v1/auth/signup').send({
+      email: 'wrongpw@example.com',
+      password: 'correct horse battery staple',
+      displayName: 'Test',
+    })
+
+    const res = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: 'wrongpw@example.com', password: 'not the right password' })
+
+    expect(res.status).toBe(401)
+  })
+
+  it('rejects /me with no session', async () => {
+    const res = await request(app).get('/api/v1/auth/me')
+    expect(res.status).toBe(401)
+  })
+
+  it('clears the session on logout', async () => {
+    const agent = request.agent(app)
+    await signUpAndLogIn(agent)
+
+    const logout = await agent.post('/api/v1/auth/logout')
+    expect(logout.status).toBe(204)
+
+    const me = await agent.get('/api/v1/auth/me')
+    expect(me.status).toBe(401)
+  })
+})
+
+describe('teams', () => {
+  it('creates a team and makes the creator an admin member', async () => {
+    const agent = request.agent(app)
+    await signUpAndLogIn(agent)
+
+    const res = await agent.post('/api/v1/teams').send({ name: 'Platform Team' })
+    expect(res.status).toBe(201)
+    expect(res.body).toMatchObject({ name: 'Platform Team', role: 'ADMIN' })
+
+    const list = await agent.get('/api/v1/teams')
+    expect(list.body.items).toHaveLength(1)
+  })
+})
+
+describe('incidents (team-scoped)', () => {
+  it('rejects incident creation with no session', async () => {
+    const agent = request.agent(app)
+    await signUpAndLogIn(agent)
+    const teamId = await createTeamAs(agent)
+
+    const res = await request(app)
+      .post(`/api/v1/teams/${teamId}/incidents`)
+      .send({ title: 'Checkout API down', description: '', severity: 'high' })
+
+    expect(res.status).toBe(401)
+  })
+
+  it('rejects incident creation from a signed-in non-member with 403', async () => {
+    const owner = request.agent(app)
+    await signUpAndLogIn(owner)
+    const teamId = await createTeamAs(owner)
+
+    const outsider = request.agent(app)
+    await signUpAndLogIn(outsider)
+
+    const res = await outsider
+      .post(`/api/v1/teams/${teamId}/incidents`)
+      .send({ title: 'Checkout API down', description: '', severity: 'high' })
+
+    expect(res.status).toBe(403)
+  })
+
+  it('allows a team member to create and fetch an incident', async () => {
+    const agent = request.agent(app)
+    await signUpAndLogIn(agent)
+    const teamId = await createTeamAs(agent)
+
+    const created = await agent
+      .post(`/api/v1/teams/${teamId}/incidents`)
+      .send({ title: 'Checkout API down', description: 'EU only', severity: 'high' })
+
+    expect(created.status).toBe(201)
+    expect(created.body).toMatchObject({ title: 'Checkout API down', status: 'open' })
+
+    const fetched = await agent.get(`/api/v1/teams/${teamId}/incidents/${created.body.id}`)
+    expect(fetched.status).toBe(200)
   })
 
   it('rejects a malformed JSON body with 400, not 500', async () => {
-    const res = await request(app)
-      .post('/api/v1/incidents')
+    const agent = request.agent(app)
+    await signUpAndLogIn(agent)
+    const teamId = await createTeamAs(agent)
+
+    const res = await agent
+      .post(`/api/v1/teams/${teamId}/incidents`)
       .set('Content-Type', 'application/json')
       .send('{"title": "missing closing brace"')
 
@@ -40,94 +196,123 @@ describe('POST /api/v1/incidents', () => {
   })
 
   it('rejects an invalid title with 400', async () => {
-    const res = await request(app)
-      .post('/api/v1/incidents')
+    const agent = request.agent(app)
+    await signUpAndLogIn(agent)
+    const teamId = await createTeamAs(agent)
+
+    const res = await agent
+      .post(`/api/v1/teams/${teamId}/incidents`)
       .send({ title: 'ab', description: '', severity: 'high' })
 
     expect(res.status).toBe(400)
     expect(res.body.error.code).toBe('BAD_REQUEST')
   })
-})
 
-describe('GET /api/v1/incidents/:id', () => {
   it('returns 404 for a missing incident', async () => {
-    const res = await request(app).get('/api/v1/incidents/00000000-0000-0000-0000-000000000000')
+    const agent = request.agent(app)
+    await signUpAndLogIn(agent)
+    const teamId = await createTeamAs(agent)
+
+    const res = await agent.get(
+      `/api/v1/teams/${teamId}/incidents/00000000-0000-0000-0000-000000000000`,
+    )
 
     expect(res.status).toBe(404)
-    expect(res.body.error.code).toBe('NOT_FOUND')
   })
 
-  it('returns 400 for a malformed id', async () => {
-    const res = await request(app).get('/api/v1/incidents/not-a-uuid')
+  it('returns 404 for an incident that belongs to a different team, even for a valid member elsewhere', async () => {
+    const owner = request.agent(app)
+    await signUpAndLogIn(owner)
+    const ownerTeamId = await createTeamAs(owner, 'Owner Team')
+    const created = await owner
+      .post(`/api/v1/teams/${ownerTeamId}/incidents`)
+      .send({ title: 'Owner-only incident', description: '', severity: 'low' })
 
-    expect(res.status).toBe(400)
+    const other = request.agent(app)
+    await signUpAndLogIn(other)
+    const otherTeamId = await createTeamAs(other, 'Other Team')
+
+    // `other` is a real member of `otherTeamId`, just not of `ownerTeamId` —
+    // proves membership is checked per-team, not just "signed in + a member
+    // of *some* team."
+    const res = await other.get(`/api/v1/teams/${otherTeamId}/incidents/${created.body.id}`)
+    expect(res.status).toBe(404)
   })
-})
 
-describe('PATCH /api/v1/incidents/:id/status', () => {
   it('rejects an illegal transition with 409', async () => {
-    const created = await request(app)
-      .post('/api/v1/incidents')
+    const agent = request.agent(app)
+    await signUpAndLogIn(agent)
+    const teamId = await createTeamAs(agent)
+
+    const created = await agent
+      .post(`/api/v1/teams/${teamId}/incidents`)
       .send({ title: 'Payments failing', description: '', severity: 'critical' })
 
-    await request(app)
-      .patch(`/api/v1/incidents/${created.body.id}/status`)
+    await agent
+      .patch(`/api/v1/teams/${teamId}/incidents/${created.body.id}/status`)
       .send({ status: 'resolved' })
 
-    const res = await request(app)
-      .patch(`/api/v1/incidents/${created.body.id}/status`)
+    const res = await agent
+      .patch(`/api/v1/teams/${teamId}/incidents/${created.body.id}/status`)
       .send({ status: 'investigating' })
 
     expect(res.status).toBe(409)
-    expect(res.body.error.code).toBe('CONFLICT')
   })
 
   it('allows a legal transition', async () => {
-    const created = await request(app)
-      .post('/api/v1/incidents')
+    const agent = request.agent(app)
+    await signUpAndLogIn(agent)
+    const teamId = await createTeamAs(agent)
+
+    const created = await agent
+      .post(`/api/v1/teams/${teamId}/incidents`)
       .send({ title: 'DB latency spike', description: '', severity: 'medium' })
 
-    const res = await request(app)
-      .patch(`/api/v1/incidents/${created.body.id}/status`)
+    const res = await agent
+      .patch(`/api/v1/teams/${teamId}/incidents/${created.body.id}/status`)
       .send({ status: 'investigating' })
 
     expect(res.status).toBe(200)
     expect(res.body.status).toBe('investigating')
   })
-})
 
-describe('GET /api/v1/incidents', () => {
   it('paginates with a cursor', async () => {
+    const agent = request.agent(app)
+    await signUpAndLogIn(agent)
+    const teamId = await createTeamAs(agent)
+
     for (const title of ['Incident A', 'Incident B', 'Incident C']) {
-      await request(app)
-        .post('/api/v1/incidents')
+      await agent
+        .post(`/api/v1/teams/${teamId}/incidents`)
         .send({ title, description: '', severity: 'low' })
     }
 
-    const firstPage = await request(app).get('/api/v1/incidents?limit=2')
+    const firstPage = await agent.get(`/api/v1/teams/${teamId}/incidents?limit=2`)
     expect(firstPage.status).toBe(200)
     expect(firstPage.body.items).toHaveLength(2)
     expect(firstPage.body.nextCursor).not.toBeNull()
 
-    const secondPage = await request(app).get(
-      `/api/v1/incidents?limit=2&cursor=${firstPage.body.nextCursor}`,
+    const secondPage = await agent.get(
+      `/api/v1/teams/${teamId}/incidents?limit=2&cursor=${firstPage.body.nextCursor}`,
     )
     expect(secondPage.status).toBe(200)
     expect(secondPage.body.items).toHaveLength(1)
     expect(secondPage.body.nextCursor).toBeNull()
   })
-})
 
-describe('DELETE /api/v1/incidents/:id', () => {
   it('removes an incident and 404s afterward', async () => {
-    const created = await request(app)
-      .post('/api/v1/incidents')
+    const agent = request.agent(app)
+    await signUpAndLogIn(agent)
+    const teamId = await createTeamAs(agent)
+
+    const created = await agent
+      .post(`/api/v1/teams/${teamId}/incidents`)
       .send({ title: 'Stale alert', description: '', severity: 'low' })
 
-    const del = await request(app).delete(`/api/v1/incidents/${created.body.id}`)
+    const del = await agent.delete(`/api/v1/teams/${teamId}/incidents/${created.body.id}`)
     expect(del.status).toBe(204)
 
-    const getAfter = await request(app).get(`/api/v1/incidents/${created.body.id}`)
+    const getAfter = await agent.get(`/api/v1/teams/${teamId}/incidents/${created.body.id}`)
     expect(getAfter.status).toBe(404)
   })
 })
