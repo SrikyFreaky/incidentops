@@ -34,4 +34,4 @@ Daily log of what got built. Updated as I go.
 ## Day 7
 - [x] End-to-end: sign in, create incident, see it persisted
 - [x] Seed data + smoke test
-- [ ] First deploy
+- [x] First deploy

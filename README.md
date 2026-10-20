@@ -15,6 +15,16 @@ Most incident tools are either too heavy (PagerDuty, big Slack integrations) or
 just a spreadsheet. This is a smaller, focused version that only does the
 timeline + roles + live updates part.
 
+## Live demo
+
+- App: https://incidentops-client.onrender.com
+- API: https://incidentops-api-1o19.onrender.com
+
+Demo login: `demo@example.com` / `demo password 123` (or sign up your own
+account and create a team). Both services are on free-tier hosting and spin
+down after inactivity, so the first request after a while may take ~30s to
+wake up.
+
 ## Stack
 
 - React + Vite + TypeScript (frontend)
@@ -23,9 +33,9 @@ timeline + roles + live updates part.
 
 ## Status
 
-Core workflow is working end to end locally: sign up, create a team, report
-an incident, change its status, see it persist across a refresh. Not
-deployed yet.
+Core workflow is deployed and working end to end: sign up, create a team,
+report an incident, change its status, see it persist — all backed by a
+real hosted Postgres database. See [Live demo](#live-demo) above.
 
 ## Running locally
 
