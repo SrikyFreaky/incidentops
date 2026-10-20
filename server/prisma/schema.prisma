@@ -4,7 +4,16 @@ generator client {
 
 datasource db {
   provider          = "postgresql"
+  // Normal app queries go through Supabase's connection pooler — the
+  // direct connection is IPv6-only, which Render (and most PaaS hosts)
+  // can't reach at all. `directUrl`, below, is what `prisma migrate`
+  // actually uses instead, since schema changes need a real session
+  // connection, not a transaction-pooled one.
   url               = env("DATABASE_URL")
+  directUrl         = env("DIRECT_URL")
+  // Local-dev-only: `prisma migrate dev`'s scratch database for diffing
+  // schema changes. Not used in production at all (migrate deploy, which
+  // Render runs, doesn't need a shadow database).
   shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
 }
 

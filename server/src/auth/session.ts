@@ -30,9 +30,14 @@ export function createSessionMiddleware() {
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      // Not `secure: true` yet — this runs over plain http in local dev.
-      // Flip this once the app is actually deployed behind HTTPS.
-      secure: false,
+      // In production the client and API live on different Render
+      // domains — a genuinely cross-site request from the browser's
+      // point of view. Browsers refuse to send a cookie cross-site
+      // unless it's both `Secure` and `SameSite=None`; in local dev
+      // (same-site, plain http) the defaults (`secure: false`,
+      // `sameSite: 'lax'`) are what actually work instead.
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
       maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
     },
   })

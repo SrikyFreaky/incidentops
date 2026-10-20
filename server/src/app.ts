@@ -9,6 +9,15 @@ import { teamsRouter } from './routes/teams'
 export function createApp() {
   const app = express()
 
+  // Render (and most PaaS hosts) terminate TLS at a reverse proxy and
+  // forward plain HTTP internally, setting `X-Forwarded-Proto` to say
+  // the original request was https. Without this, Express thinks every
+  // request is plain HTTP, and the session cookie's `secure: true` in
+  // production would mean the cookie never gets set at all.
+  if (process.env.NODE_ENV === 'production') {
+    app.set('trust proxy', 1)
+  }
+
   // `credentials: true` + a reflected (non-wildcard) origin is required
   // for the session cookie to actually be sent cross-origin once the
   // Vite dev server (a different port) starts talking to this API.
